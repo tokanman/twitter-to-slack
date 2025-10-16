@@ -1,0 +1,28 @@
+name: X → Slack (Workflow Webhook)
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # Her 10 dakikada bir (UTC)
+  workflow_dispatch:          # Elle tetiklemek için
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps (Playwright + Firefox)
+        run: |
+          pip install -r requirements.txt
+          python -m playwright install --with-deps firefox
+
+      - name: Run scraper
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}   # Slack Workflow Builder’dan aldığın URL
+          X_HANDLE: replicate                           # Takip edilecek X hesabı (örn: veedstudio)
+        run: python scrape_x_to_slack.py
