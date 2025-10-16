@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        handle: [replicate, runwayml, Alibaba_Wan, higgsfield_ai, veedstudio]  # 🔹 buraya takip etmek istediğin X hesaplarını yaz
+        handle: [replicate, runwayml, Alibaba_Wan, higgsfield_ai, veedstudio]
     steps:
       - uses: actions/checkout@v4
 
@@ -24,8 +24,25 @@ jobs:
           pip install -r requirements.txt
           python -m playwright install --with-deps firefox
 
+      # --- state.json'ı her hesap için cache'le (tekrar gönderimi önlemek için) ---
+      - name: Restore state cache
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: state-${{ matrix.handle }}.json
+          key: state-${{ matrix.handle }}
+
+      - name: Prepare state file for script
+        run: |
+          if [ -f "state-${{ matrix.handle }}.json" ]; then cp "state-${{ matrix.handle }}.json" state.json; fi
+          if [ ! -f state.json ]; then echo '{"last_id": null}' > state.json; fi
+
       - name: Run scraper for each account
         env:
           SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
           X_HANDLE: ${{ matrix.handle }}
         run: python scrape_x_to_slack.py
+
+      - name: Save state back to cache file
+        run: |
+          cp state.json "state-${{ matrix.handle }}.json"
