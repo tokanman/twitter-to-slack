@@ -11,7 +11,7 @@ jobs:
 
     strategy:
       matrix:
-        handle: [replicate, runwayml, Alibaba_Wan, higgsfield_ai, veedstudio, Kling_ai, Hailuo_AI, OpenAI, fal, ComfyUI]
+        handle: [replicate, runwayml, Alibaba_Wan, higgsfield_ai, veedstudio, Kling_ai, Hailuo_AI, OpenAI, fal, ComfyUI, freepik]
       max-parallel: 1   # ↩️ aynı anda tek job; unfurl atlamalarını azaltır
 
     steps:
