@@ -63,7 +63,7 @@ async def fetch_via_playwright(handle):
 def post_to_slack(tweet_id, handle):
     """Slack'e mesaj gönder (chat.postMessage API'si ile)."""
     link = f"https://x.com/{handle}/status/{tweet_id}"
-    text = f"🐦 Yeni tweet @{handle} hesabından:\n{link}"
+    text = f"Ai News from @{handle} hesabından:\n{link}"
     headers = {"Authorization": f"Bearer {SLACK_BOT_TOKEN}"}
     data = {"channel": SLACK_CHANNEL_ID, "text": text}
     log("Posting to Slack:", data)
