@@ -1,50 +1,85 @@
-import os, json, re, asyncio, requests
+import os, json, re, asyncio, requests, sys
 from pathlib import Path
 from playwright.async_api import async_playwright
 
 SLACK_WEBHOOK = os.environ["SLACK_WEBHOOK"]
 X_HANDLE = os.environ.get("X_HANDLE", "replicate")
+DEBUG = os.environ.get("DEBUG") == "1"
+FORCE_POST = os.environ.get("FORCE_POST") == "1"
+
 STATE_FILE = Path("state.json")
+
+def log(*a):
+    if DEBUG:
+        print(*a, file=sys.stderr)
 
 def load_last_id():
     if STATE_FILE.exists():
-        return json.loads(STATE_FILE.read_text()).get("last_id")
+        try:
+            return json.loads(STATE_FILE.read_text()).get("last_id")
+        except Exception:
+            return None
     return None
 
 def save_last_id(tid):
     STATE_FILE.write_text(json.dumps({"last_id": tid}))
 
-async def get_latest_tweet_id(page, handle):
-    url = f"https://x.com/{handle}"
-    await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-    anchors = await page.locator('a[href*="/status/"]').all()
-    ids = []
-    for a in anchors:
-        href = await a.get_attribute("href")
-        if href and "/status/" in href:
-            m = re.search(r"/status/(\d+)", href)
-            if m:
-                ids.append(m.group(1))
+def extract_max_status_ids(text):
+    ids = re.findall(r"/status/(\d+)", text)
     return max(ids) if ids else None
+
+def fetch_via_rjina(handle):
+    # X sayfasını r.jina.ai üzerinden düz metin gibi çeker (çok sağlam)
+    url = f"https://r.jina.ai/http://x.com/{handle}"
+    log("r.jina.ai GET:", url)
+    r = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+    if r.status_code == 200 and r.text:
+        tid = extract_max_status_ids(r.text)
+        log("r.jina.ai latest id:", tid)
+        return tid
+    log("r.jina.ai status:", r.status_code)
+    return None
+
+async def fetch_via_playwright(handle):
+    url = f"https://x.com/{handle}"
+    log("Playwright GET:", url)
+    async with async_playwright() as p:
+        browser = await p.firefox.launch(headless=True)
+        page = await browser.new_page(user_agent="Mozilla/5.0")
+        try:
+            await page.goto(url, wait_until="networkidle", timeout=90000)
+            html = await page.content()
+            tid = extract_max_status_ids(html)
+            log("Playwright latest id:", tid)
+            return tid
+        finally:
+            await browser.close()
 
 def post_to_slack(tweet_id, handle):
     link = f"https://x.com/{handle}/status/{tweet_id}"
-    payload = {
-        "text": f"🐦 Yeni tweet @{handle} hesabından!",
-        "url": link
-    }
-    requests.post(SLACK_WEBHOOK, json=payload)
+    payload = {"text": f"🐦 Yeni tweet @{handle} hesabından:", "url": link}
+    log("Post to Slack:", payload)
+    requests.post(SLACK_WEBHOOK, json=payload, timeout=15)
 
 async def main():
     last = load_last_id()
-    async with async_playwright() as p:
-        browser = await p.firefox.launch(headless=True)
-        page = await browser.new_page()
-        latest = await get_latest_tweet_id(page, X_HANDLE)
-        await browser.close()
-    if latest and latest != last:
+    log("Handle:", X_HANDLE, "LastID:", last)
+
+    # 1) Önce r.jina.ai ile dene (API/JS yok, çok hızlı)
+    latest = fetch_via_rjina(X_HANDLE)
+
+    # 2) Olmazsa Playwright fallback
+    if not latest:
+        latest = await fetch_via_playwright(X_HANDLE)
+
+    log("LatestID found:", latest)
+
+    if latest and (FORCE_POST or latest != last):
         post_to_slack(latest, X_HANDLE)
         save_last_id(latest)
+        log("Posted and saved:", latest)
+    else:
+        log("No new tweet (or FORCE_POST disabled).")
 
 if __name__ == "__main__":
     asyncio.run(main())
