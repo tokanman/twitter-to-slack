@@ -2,7 +2,7 @@ name: X → Slack (multi-account)
 
 on:
   schedule:
-    - cron: "*/5 * * * *"   # Her 5 dakikada bir (UTC)
+    - cron: "*/60 * * * *"   # Her 60 dakikada bir (UTC)
   workflow_dispatch:
 
 jobs:
