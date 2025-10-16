@@ -2,15 +2,18 @@ name: X → Slack (multi-account)
 
 on:
   schedule:
-    - cron: "*/60 * * * *"   # Her 60 dakikada bir (UTC)
+    - cron: "0 * * * *"   # Her saat başı (UTC). İstersen */60 yerine bunu kullan.
   workflow_dispatch:
 
 jobs:
   run:
     runs-on: ubuntu-latest
+
     strategy:
       matrix:
         handle: [replicate, runwayml, Alibaba_Wan, higgsfield_ai, veedstudio, Kling_ai, Hailuo_AI, OpenAI]
+      max-parallel: 1   # ↩️ aynı anda tek job; unfurl atlamalarını azaltır
+
     steps:
       - uses: actions/checkout@v4
 
