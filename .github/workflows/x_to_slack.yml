@@ -39,7 +39,8 @@ jobs:
 
       - name: Run scraper for each account
         env:
-          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
           X_HANDLE: ${{ matrix.handle }}
         run: python scrape_x_to_slack.py
 
