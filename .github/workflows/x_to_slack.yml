@@ -1,13 +1,16 @@
-name: X → Slack (Workflow Webhook)
+name: X → Slack (multi-account)
 
 on:
   schedule:
-    - cron: "*/10 * * * *"   # Her 10 dakikada bir (UTC)
-  workflow_dispatch:          # Elle tetiklemek için
+    - cron: "*/5 * * * *"   # Her 5 dakikada bir (UTC)
+  workflow_dispatch:
 
 jobs:
   run:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        handle: [replicate, runwayml, Alibaba_Wan, higgsfield_ai, veedstudio]  # 🔹 buraya takip etmek istediğin X hesaplarını yaz
     steps:
       - uses: actions/checkout@v4
 
@@ -21,8 +24,8 @@ jobs:
           pip install -r requirements.txt
           python -m playwright install --with-deps firefox
 
-      - name: Run scraper
+      - name: Run scraper for each account
         env:
-          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}   # Slack Workflow Builder’dan aldığın URL
-          X_HANDLE: replicate                           # Takip edilecek X hesabı (örn: veedstudio)
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          X_HANDLE: ${{ matrix.handle }}
         run: python scrape_x_to_slack.py
