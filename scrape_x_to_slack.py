@@ -60,15 +60,66 @@ async def fetch_via_playwright(handle):
         finally:
             await browser.close()
 
+# --- Yeni: Tweet metninden kısa özet (snippet) çek ---
+def fetch_tweet_snippet(handle, tweet_id, max_len=240):
+    try:
+        url = f"https://r.jina.ai/http://x.com/{handle}/status/{tweet_id}"
+        r = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code == 200 and r.text:
+            text = r.text
+            # Fazla boşlukları sadeleştir
+            text = re.sub(r"\s+", " ", text).strip()
+            # Çok uzunsa kısalt
+            if len(text) > max_len:
+                text = text[: max_len - 1] + "…"
+            return text
+    except Exception:
+        pass
+    return None
+
+# --- Güncellendi: Block Kit ile detaylı mesaj gönder ---
 def post_to_slack(tweet_id, handle):
-    """Slack'e mesaj gönder (chat.postMessage API'si ile)."""
     link = f"https://x.com/{handle}/status/{tweet_id}"
-    text = f"Ai News from @{handle} hesabından:\n{link}"
+    snippet = fetch_tweet_snippet(handle, tweet_id) or f"@{handle} yeni bir paylaşım yaptı."
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": f"📰 @{handle} — Yeni paylaşım", "emoji": True},
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"{snippet}\n\n🔗 *Link:* <{link}|X’te aç>"},
+        },
+        {
+            "type": "context",
+            "elements": [
+                {"type": "mrkdwn", "text": f"ID: `{tweet_id}`"},
+                {"type": "mrkdwn", "text": "Kaynak: X"},
+            ],
+        },
+        # İstersen buton ekleyebilirsin:
+        # {
+        #     "type": "actions",
+        #     "elements": [
+        #         {"type": "button", "text": {"type": "plain_text", "text": "X’te Aç"}, "url": link}
+        #     ]
+        # }
+    ]
+
     headers = {"Authorization": f"Bearer {SLACK_BOT_TOKEN}"}
-    data = {"channel": SLACK_CHANNEL_ID, "text": text}
-    log("Posting to Slack:", data)
+    data = {
+        "channel": SLACK_CHANNEL_ID,
+        "text": f"@{handle} yeni paylaşım: {link}",  # fallback (bildirim/arama için)
+        "blocks": blocks,
+        # thread_ts GÖNDERME → her seferinde yeni mesaj olsun
+        "unfurl_links": False,   # Link önizlemesini kapatıp blokları kullan
+        "unfurl_media": False,
+    }
+
     r = requests.post("https://slack.com/api/chat.postMessage", headers=headers, json=data, timeout=15)
-    log("Slack response:", r.status_code, r.text)
+    if DEBUG:
+        print("Slack response:", r.status_code, r.text, file=sys.stderr)
 
 # --- Ana akış ---
 async def main():
