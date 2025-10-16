@@ -2,13 +2,17 @@ import os, json, re, asyncio, requests, sys
 from pathlib import Path
 from playwright.async_api import async_playwright
 
-SLACK_WEBHOOK = os.environ["SLACK_WEBHOOK"]
+# --- Ortam değişkenleri ---
 X_HANDLE = os.environ.get("X_HANDLE", "replicate")
 DEBUG = os.environ.get("DEBUG") == "1"
 FORCE_POST = os.environ.get("FORCE_POST") == "1"
-
 STATE_FILE = Path("state.json")
 
+# Slack App token ve kanal ID'si (chat.postMessage için)
+SLACK_BOT_TOKEN = os.environ["SLACK_BOT_TOKEN"]
+SLACK_CHANNEL_ID = os.environ["SLACK_CHANNEL_ID"]
+
+# --- Yardımcı fonksiyonlar ---
 def log(*a):
     if DEBUG:
         print(*a, file=sys.stderr)
@@ -29,7 +33,7 @@ def extract_max_status_ids(text):
     return max(ids) if ids else None
 
 def fetch_via_rjina(handle):
-    # X sayfasını r.jina.ai üzerinden düz metin gibi çeker (çok sağlam)
+    """X sayfasını r.jina.ai üzerinden düz metin gibi çeker (çok sağlam)."""
     url = f"https://r.jina.ai/http://x.com/{handle}"
     log("r.jina.ai GET:", url)
     r = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
@@ -41,6 +45,7 @@ def fetch_via_rjina(handle):
     return None
 
 async def fetch_via_playwright(handle):
+    """Eğer r.jina.ai başarısız olursa X sayfasını Playwright ile çeker."""
     url = f"https://x.com/{handle}"
     log("Playwright GET:", url)
     async with async_playwright() as p:
@@ -56,16 +61,21 @@ async def fetch_via_playwright(handle):
             await browser.close()
 
 def post_to_slack(tweet_id, handle):
+    """Slack'e mesaj gönder (chat.postMessage API'si ile)."""
     link = f"https://x.com/{handle}/status/{tweet_id}"
-    payload = {"text": f"🐦 Yeni tweet @{handle} hesabından:", "url": link}
-    log("Post to Slack:", payload)
-    requests.post(SLACK_WEBHOOK, json=payload, timeout=15)
+    text = f"🐦 Yeni tweet @{handle} hesabından:\n{link}"
+    headers = {"Authorization": f"Bearer {SLACK_BOT_TOKEN}"}
+    data = {"channel": SLACK_CHANNEL_ID, "text": text}
+    log("Posting to Slack:", data)
+    r = requests.post("https://slack.com/api/chat.postMessage", headers=headers, json=data, timeout=15)
+    log("Slack response:", r.status_code, r.text)
 
+# --- Ana akış ---
 async def main():
     last = load_last_id()
     log("Handle:", X_HANDLE, "LastID:", last)
 
-    # 1) Önce r.jina.ai ile dene (API/JS yok, çok hızlı)
+    # 1) Önce r.jina.ai dene (çok hızlı)
     latest = fetch_via_rjina(X_HANDLE)
 
     # 2) Olmazsa Playwright fallback
