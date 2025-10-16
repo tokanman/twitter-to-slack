@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        handle: [replicate, runwayml, Alibaba_Wan, higgsfield_ai, veedstudio]
+        handle: [replicate, runwayml, Alibaba_Wan, higgsfield_ai, veedstudio, tokanman]
     steps:
       - uses: actions/checkout@v4
 
