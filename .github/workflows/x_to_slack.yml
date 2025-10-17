@@ -9,9 +9,9 @@ jobs:
   run:
     runs-on: ubuntu-latest
 
-    # Aynı anda bir run çalışsın, çakışma olmasın
+    # Aynı anda bir run çalışsın, çakışma olmasın (branch bazlı)
     concurrency:
-      group: x-to-slack
+      group: x-to-slack-${{ github.ref }}
       cancel-in-progress: false
 
     strategy:
@@ -25,6 +25,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0            # rebase/pull için tam geçmiş
+          persist-credentials: true # GITHUB_TOKEN ile push
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -47,16 +50,24 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
           X_HANDLE: ${{ matrix.handle }}
-          # DEBUG: "1"      # gerekirse aç
-          # FORCE_POST: "1" # SADECE testte aç, normalde ekleme
         run: python scrape_x_to_slack.py
 
-      # --- state'i geri yaz ve commit et ---
+      # --- state'i geri yaz ve güvenli şekilde commit/push et ---
       - name: Save & commit state
+        env:
+          BRANCH_NAME: ${{ github.ref_name }}
         run: |
           cp state.json "state-${{ matrix.handle }}.json"
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Başka job biraz önce push etmiş olabilir → en günceli çek
+          git fetch origin "$BRANCH_NAME"
+          git pull --rebase origin "$BRANCH_NAME" || true
+
           git add "state-${{ matrix.handle }}.json"
-          git commit -m "save state for ${{ matrix.handle }}" || echo "no changes"
-          git push
+          git commit -m "save state for ${{ matrix.handle }}" || { echo "no changes"; exit 0; }
+
+          # Doğru branche pushla
+          git push origin HEAD:"$BRANCH_NAME"
