@@ -4,15 +4,24 @@ on:
   schedule:
     - cron: "0 */2 * * *"   # Her 2 saatte bir (UTC)
   workflow_dispatch:
-  
+
 jobs:
   run:
     runs-on: ubuntu-latest
 
+    # Aynı anda bir run çalışsın, çakışma olmasın
+    concurrency:
+      group: x-to-slack
+      cancel-in-progress: false
+
     strategy:
       matrix:
         handle: [replicate, runwayml, Alibaba_Wan, higgsfield_ai, veedstudio, Kling_ai, Hailuo_AI, OpenAI, fal, ComfyUI, freepik]
-      max-parallel: 1   # ↩️ aynı anda tek job; unfurl atlamalarını azaltır
+      max-parallel: 1   # sırayla işlesin; unfurl atlaması azalır
+
+    # state dosyalarını repo'ya yazmak için gerekli
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -27,15 +36,8 @@ jobs:
           pip install -r requirements.txt
           python -m playwright install --with-deps firefox
 
-      # --- state.json'ı her hesap için cache'le (tekrar gönderimi önlemek için) ---
-      - name: Restore state cache
-        id: cache
-        uses: actions/cache@v4
-        with:
-          path: state-${{ matrix.handle }}.json
-          key: state-${{ matrix.handle }}
-
-      - name: Prepare state file for script
+      # --- state'i repo'daki dosyadan yükle ---
+      - name: Restore state file
         run: |
           if [ -f "state-${{ matrix.handle }}.json" ]; then cp "state-${{ matrix.handle }}.json" state.json; fi
           if [ ! -f state.json ]; then echo '{"last_id": null}' > state.json; fi
@@ -45,8 +47,16 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
           X_HANDLE: ${{ matrix.handle }}
+          # DEBUG: "1"      # gerekirse aç
+          # FORCE_POST: "1" # SADECE testte aç, normalde ekleme
         run: python scrape_x_to_slack.py
 
-      - name: Save state back to cache file
+      # --- state'i geri yaz ve commit et ---
+      - name: Save & commit state
         run: |
           cp state.json "state-${{ matrix.handle }}.json"
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add "state-${{ matrix.handle }}.json"
+          git commit -m "save state for ${{ matrix.handle }}" || echo "no changes"
+          git push
