@@ -22,7 +22,6 @@ jobs:
   run:
     runs-on: ubuntu-latest
 
-    # Aynı anda bir run çalışsın, çakışma olmasın (branch bazlı)
     concurrency:
       group: x-to-slack-${{ github.ref }}
       cancel-in-progress: false
@@ -30,29 +29,27 @@ jobs:
     strategy:
       matrix:
         handle: [replicate, runwayml, Alibaba_Wan, higgsfield_ai, veedstudio, Kling_ai, Hailuo_AI, OpenAI, fal, ComfyUI, freepik]
-      max-parallel: 1   # sırayla işlesin; unfurl atlaması azalır
+      max-parallel: 1
 
-    # state dosyalarını repo'ya yazmak için gerekli
     permissions:
       contents: write
 
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0            # rebase/pull için tam geçmiş
-          persist-credentials: true # GITHUB_TOKEN ile push
+          fetch-depth: 0
+          persist-credentials: true
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install deps (Playwright + Firefox)
+      - name: Install deps (Playwright + Chromium)
         run: |
           pip install -r requirements.txt
-          python -m playwright install --with-deps firefox
+          python -m playwright install --with-deps chromium
 
-      # --- state'i repo'daki dosyadan yükle ---
       - name: Restore state file
         run: |
           if [ -f "state-${{ matrix.handle }}.json" ]; then cp "state-${{ matrix.handle }}.json" state.json; fi
@@ -68,22 +65,15 @@ jobs:
           IGNORE_FIRST_POST: ${{ inputs.IGNORE_FIRST_POST || '0' }}
         run: python scrape_x_to_slack.py
 
-      # --- state'i geri yaz ve güvenli şekilde commit/push et ---
       - name: Save & commit state
         env:
           BRANCH_NAME: ${{ github.ref_name }}
         run: |
           cp state.json "state-${{ matrix.handle }}.json"
-
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # Başka job biraz önce push etmiş olabilir → en günceli çek
           git fetch origin "$BRANCH_NAME"
           git pull --rebase origin "$BRANCH_NAME" || true
-
           git add "state-${{ matrix.handle }}.json"
           git commit -m "[skip ci] save state for ${{ matrix.handle }}" || { echo "no changes"; exit 0; }
-
-          # Doğru branche pushla
           git push origin HEAD:"$BRANCH_NAME"
