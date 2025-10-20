@@ -4,6 +4,19 @@ on:
   schedule:
     - cron: "0 */3 * * *"   # Her 3 saatte bir (UTC)
   workflow_dispatch:
+    inputs:
+      DEBUG:
+        description: "Enable debug logs (1/0)"
+        required: false
+        default: "0"
+      FORCE_POST:
+        description: "Force post even if same id (1/0)"
+        required: false
+        default: "0"
+      IGNORE_FIRST_POST:
+        description: "On first run, save latest without posting (1/0)"
+        required: false
+        default: "0"
 
 jobs:
   run:
@@ -50,6 +63,9 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
           X_HANDLE: ${{ matrix.handle }}
+          DEBUG: ${{ inputs.DEBUG || '0' }}
+          FORCE_POST: ${{ inputs.FORCE_POST || '0' }}
+          IGNORE_FIRST_POST: ${{ inputs.IGNORE_FIRST_POST || '0' }}
         run: python scrape_x_to_slack.py
 
       # --- state'i geri yaz ve güvenli şekilde commit/push et ---
@@ -67,7 +83,7 @@ jobs:
           git pull --rebase origin "$BRANCH_NAME" || true
 
           git add "state-${{ matrix.handle }}.json"
-          git commit -m "save state for ${{ matrix.handle }}" || { echo "no changes"; exit 0; }
+          git commit -m "[skip ci] save state for ${{ matrix.handle }}" || { echo "no changes"; exit 0; }
 
           # Doğru branche pushla
           git push origin HEAD:"$BRANCH_NAME"
