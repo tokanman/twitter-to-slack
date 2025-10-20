@@ -34,28 +34,20 @@ def save_last_id(tid):
         print("ERROR saving state:", e, file=sys.stderr)
 
 def extract_max_status_ids(text, handle=None):
-    """
-    Önce handle'a özgü linkleri ara (daha temiz), bulunamazsa genel fallback.
-    max'ı sayısal olarak al (lexicographic bug fix).
-    """
     ids = []
     if handle:
         pat = rf'https?://x\.com/{re.escape(handle)}/status/(\d+)'
         ids = re.findall(pat, text)
-
     if not ids:
         ids = re.findall(r"/status/(\d+)", text)
-
     if not ids:
         return None
     try:
         return str(max(int(x) for x in ids))
     except Exception:
-        # Son çare: string max (çok düşük ihtimalle) — ama yine de dön.
         return max(ids)
 
 def fetch_via_rjina(handle):
-    """X sayfasını r.jina.ai üzerinden düz metin gibi çeker (çok sağlam)."""
     try:
         url = f"https://r.jina.ai/http://x.com/{handle}"
         log("r.jina.ai GET:", url)
@@ -76,8 +68,8 @@ async def fetch_via_playwright(handle):
         url = f"https://x.com/{handle}"
         log("Playwright GET:", url)
         async with async_playwright() as p:
-            # Firefox kullanmaya devam (repo kurulumuna uyumlu)
-            browser = await p.firefox.launch(headless=True)
+            # 🚀 Chromium versiyonu
+            browser = await p.chromium.launch(headless=True)
             page = await browser.new_page(user_agent="Mozilla/5.0")
             await page.goto(url, wait_until="networkidle", timeout=90_000)
             html = await page.content()
@@ -104,7 +96,6 @@ def post_to_slack(tweet_id, handle):
     data = {
         "channel": SLACK_CHANNEL_ID,
         "text": link,
-        # klasik önizleme için açık kalsın
         "unfurl_links": True,
         "unfurl_media": True,
     }
@@ -133,4 +124,32 @@ def post_to_slack(tweet_id, handle):
     if not payload.get("ok", False):
         raise RuntimeError(f"Slack post failed: {payload.get('error', 'unknown')}")
 
-# --- Ana a
+# --- Ana akış ---
+async def main():
+    last = load_last_id()
+    log("Handle:", X_HANDLE, "LastID:", last)
+
+    latest = fetch_via_rjina(X_HANDLE)
+    if not latest:
+        latest = await fetch_via_playwright(X_HANDLE)
+
+    log("LatestID found:", latest)
+
+    if latest and (FORCE_POST or latest != last):
+        if last is None and IGNORE_FIRST_POST and not FORCE_POST:
+            save_last_id(latest)
+            log("First run: saved without posting:", latest)
+            return
+
+        try:
+            post_to_slack(latest, X_HANDLE)
+            save_last_id(latest)
+            log("Posted and saved:", latest)
+        except Exception as e:
+            print(f"ERROR posting to Slack: {e}", file=sys.stderr)
+            raise
+    else:
+        log("No new tweet (or FORCE_POST disabled).")
+
+if __name__ == "__main__":
+    asyncio.run(main())
