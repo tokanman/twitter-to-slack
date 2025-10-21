@@ -1,8 +1,8 @@
-name: X → Slack (multi-account)
+name: X → Slack (single job, fast)
 
 on:
   schedule:
-    - cron: "0 */3 * * *"   # Her 3 saatte bir (UTC)
+    - cron: "0 */3 * * *"
   workflow_dispatch:
     inputs:
       DEBUG:
@@ -22,17 +22,16 @@ jobs:
   run:
     runs-on: ubuntu-latest
 
+    # Tüm tetiklemeler için tek örnek koşsun
     concurrency:
       group: x-to-slack-${{ github.ref }}
       cancel-in-progress: false
 
-    strategy:
-      matrix:
-        handle: [replicate, runwayml, Alibaba_Wan, higgsfield_ai, veedstudio, Kling_ai, Hailuo_AI, OpenAI, fal, ComfyUI, freepik]
-      max-parallel: 1
-
     permissions:
       contents: write
+
+    env:
+      HANDLES: "replicate runwayml Alibaba_Wan higgsfield_ai veedstudio Kling_ai Hailuo_AI OpenAI fal ComfyUI freepik"
 
     steps:
       - uses: actions/checkout@v4
@@ -44,36 +43,61 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          # pip cache (hız)
+          cache: "pip"
+
+      # Playwright kurulumu (Chromium) + cache
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-ms-playwright-chromium-v1
 
       - name: Install deps (Playwright + Chromium)
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ~/.cache/ms-playwright
         run: |
           pip install -r requirements.txt
-          python -m playwright install --with-deps chromium
+          python -m playwright install chromium
 
-      - name: Restore state file
-        run: |
-          if [ -f "state-${{ matrix.handle }}.json" ]; then cp "state-${{ matrix.handle }}.json" state.json; fi
-          if [ ! -f state.json ]; then echo '{"last_id": null}' > state.json; fi
-
-      - name: Run scraper for each account
+      # Tüm handle’ları tek run’da sırayla çalıştır
+      - name: Run scraper for all accounts (sequential)
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
-          X_HANDLE: ${{ matrix.handle }}
           DEBUG: ${{ inputs.DEBUG || '0' }}
           FORCE_POST: ${{ inputs.FORCE_POST || '0' }}
           IGNORE_FIRST_POST: ${{ inputs.IGNORE_FIRST_POST || '0' }}
-        run: python scrape_x_to_slack.py
+        shell: bash
+        run: |
+          set -e
+          for H in $HANDLES; do
+            echo "=== Running for $H ==="
+            # handle'a ait state'i yükle
+            if [ -f "state-$H.json" ]; then cp "state-$H.json" state.json; else echo '{"last_id": null}' > state.json; fi
+            X_HANDLE="$H" python scrape_x_to_slack.py
+            # güncellenen state'i ayrı dosyaya yaz
+            cp state.json "state-$H.json"
+          done
 
-      - name: Save & commit state
+      # Tüm state dosyalarını TEK commit ile push et (stabil)
+      - name: Save & commit all states (single commit)
         env:
           BRANCH_NAME: ${{ github.ref_name }}
+        shell: bash
         run: |
-          cp state.json "state-${{ matrix.handle }}.json"
+          set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin "$BRANCH_NAME"
-          git pull --rebase origin "$BRANCH_NAME" || true
-          git add "state-${{ matrix.handle }}.json"
-          git commit -m "[skip ci] save state for ${{ matrix.handle }}" || { echo "no changes"; exit 0; }
-          git push origin HEAD:"$BRANCH_NAME"
+
+          git add state-*.json || true
+
+          # Uzaktan gelen son değişiklikleri al – yerel değişiklikleri otomatik stash’le
+          git pull --rebase --autostash origin "$BRANCH_NAME" || true
+
+          # Değişiklik varsa commit et
+          git diff --cached --quiet && { echo "no changes"; exit 0; }
+          git commit -m "[skip ci] save states"
+
+          # Non-fast-forward olursa lease ile güvenli şekilde tekrar dene
+          git push --force-with-lease origin HEAD:"$BRANCH_NAME"
