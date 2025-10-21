@@ -31,7 +31,7 @@ jobs:
       contents: write
 
     env:
-      HANDLES: "replicate runwayml Alibaba_Wan higgsfield_ai veedstudio Kling_ai Hailuo_AI OpenAI fal ComfyUI freepik FishAudio midjourney elevenlabsio pika_labs krea_ai LumaLabsAI trymirage"
+      HANDLES: "replicate runwayml Alibaba_Wan higgsfield_ai veedstudio Kling_ai Hailuo_AI OpenAI fal ComfyUI freepik FishAudio midjourney elevenlabsio pika_labs krea_ai LumaLabsAI trymirage LeonardoAi deepseek_ai"
 
     steps:
       - uses: actions/checkout@v4
